@@ -84,7 +84,7 @@ pipeline {
     stage('Deploy') {
       steps {
         echo "🚢 Deploying to ${VPS_HOST}"
-        sshagent (credentials: [SSH_CRED_ID]) {
+        sshagent (credentials: ["${SSH_CRED_ID}"]) {
           sh """
             scp -o StrictHostKeyChecking=no docker-compose.deploy.yml root@${VPS_HOST}:${DEPLOY_PATH}/docker-compose.yml
             ssh -o StrictHostKeyChecking=no root@${VPS_HOST} "cd ${DEPLOY_PATH} && docker compose pull && docker compose up -d --remove-orphans"
