@@ -32,7 +32,7 @@ public class JwtValidator extends OncePerRequestFilter {
     public JwtValidator(@Value("${jwt.secret}") String jwtSecret) {
         // Load .env file if JWT_SECRET is not set or is the default value
         String actualJwtSecret = jwtSecret;
-        
+
         if (jwtSecret.equals("change-me-in-prod") || jwtSecret == null) {
             System.out.println("Loading JWT secret from .env file...");
             try {
@@ -41,7 +41,7 @@ public class JwtValidator extends OncePerRequestFilter {
                         .ignoreIfMalformed()
                         .ignoreIfMissing()
                         .load();
-                
+
                 String envJwtSecret = dotenv.get("JWT_SECRET");
                 if (envJwtSecret != null && !envJwtSecret.isEmpty()) {
                     actualJwtSecret = envJwtSecret;
@@ -53,7 +53,7 @@ public class JwtValidator extends OncePerRequestFilter {
                 System.err.println("Error loading .env file: " + e.getMessage());
             }
         }
-        
+
         System.out.println("Using JWT secret length: " + actualJwtSecret.getBytes().length * 8 + " bits");
         this.key = Keys.hmacShaKeyFor(actualJwtSecret.getBytes());
     }
@@ -90,3 +90,5 @@ public class JwtValidator extends OncePerRequestFilter {
     }
 
 }
+
+

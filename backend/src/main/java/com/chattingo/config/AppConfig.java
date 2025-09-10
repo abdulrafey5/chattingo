@@ -55,7 +55,7 @@ public class AppConfig {
                         // Parse allowed methods from environment variable
                         String[] methods = allowedMethods.split(",");
                         cfg.setAllowedMethods(Arrays.asList(methods));
-                        
+
                         cfg.setAllowedHeaders(Collections.singletonList("*"));
                         cfg.setExposedHeaders(Arrays.asList("Authorization"));
                         cfg.setAllowCredentials(true);

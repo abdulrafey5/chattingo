@@ -12,7 +12,6 @@ services:
       - db_data:/var/lib/mysql
     networks:
       - chattingo_net
-    # do NOT publish 3306 to host in prod
     expose:
       - "3306"
 
@@ -31,6 +30,11 @@ services:
       - chattingo_net
 
   frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: ${REACT_APP_API_URL}   # inject VPS API URL at build time
     image: ${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG}
     restart: unless-stopped
     depends_on:
@@ -38,8 +42,7 @@ services:
     networks:
       - chattingo_net
     ports:
-      - "80:80"   # optional if using host-level reverse proxy you may map different
-    # if you prefer not to publish here, run host nginx as reverse proxy instead
+      - "80:80"
 
 volumes:
   db_data:

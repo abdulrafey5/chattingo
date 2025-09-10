@@ -21,7 +21,7 @@ public class TokenProvider {
     public TokenProvider(@Value("${jwt.secret}") String jwtSecret) {
         // Load .env file if JWT_SECRET is not set or is the default value
         String actualJwtSecret = jwtSecret;
-        
+
         if (jwtSecret.equals("change-me-in-prod") || jwtSecret == null) {
             System.out.println("TokenProvider: Loading JWT secret from .env file...");
             try {
@@ -30,7 +30,7 @@ public class TokenProvider {
                         .ignoreIfMalformed()
                         .ignoreIfMissing()
                         .load();
-                
+
                 String envJwtSecret = dotenv.get("JWT_SECRET");
                 if (envJwtSecret != null && !envJwtSecret.isEmpty()) {
                     actualJwtSecret = envJwtSecret;
@@ -42,7 +42,7 @@ public class TokenProvider {
                 System.err.println("TokenProvider: Error loading .env file: " + e.getMessage());
             }
         }
-        
+
         System.out.println("TokenProvider: Using JWT secret length: " + actualJwtSecret.getBytes().length * 8 + " bits");
         this.key = Keys.hmacShaKeyFor(actualJwtSecret.getBytes());
     }
