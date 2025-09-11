@@ -100,8 +100,8 @@ pipeline {
       steps {
         echo "→ Deploy to VPS (copy .env and docker-compose, pull & restart)"
         withCredentials([
-          sshUserPrivateKey(credentialsId: "${SSH_CRED_ID}", keyFileVariable: 'SSH_KEY')
-          usernamePassword(credentialsId: "${DOCKERHUB_CRED_ID}", usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_PASS')
+          sshUserPrivateKey(credentialsId: 'hostinger-ssh', keyFileVariable: 'SSH_KEY'),
+          usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_PASS')
         ]) {
           script {
             // create .env locally and scp to VPS
