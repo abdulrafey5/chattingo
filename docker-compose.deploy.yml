@@ -1,0 +1,53 @@
+version: "3.8"
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - chattingo_net
+    expose:
+      - "3306"
+
+  backend:
+    image: ${DOCKERHUB_USER}/chattingo-backend:${BACKEND_TAG}
+    restart: unless-stopped
+    depends_on:
+      - mysql
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
+      SPRING_PROFILES_ACTIVE: prod
+      JWT_SECRET: ${JWT_SECRET}
+    networks:
+      - chattingo_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: ${REACT_APP_API_URL}   # inject VPS API URL at build time
+    image: ${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - chattingo_net
+    ports:
+      - "80:80"
+
+volumes:
+  db_data:
+
+networks:
+  chattingo_net:
+    driver: bridge
+

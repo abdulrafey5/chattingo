@@ -99,7 +99,10 @@ pipeline {
     stage('Deploy') {
       steps {
         echo "→ Deploy to VPS (copy .env and docker-compose, pull & restart)"
-        withCredentials([sshUserPrivateKey(credentialsId: "${SSH_CRED_ID}", keyFileVariable: 'SSH_KEY')]) {
+        withCredentials([
+          sshUserPrivateKey(credentialsId: "${SSH_CRED_ID}", keyFileVariable: 'SSH_KEY')
+          usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_PASS')
+        ]) {
           script {
             // create .env locally and scp to VPS
             sh """
@@ -130,8 +133,8 @@ EOF
             sh """
               ssh -i $SSH_KEY -o StrictHostKeyChecking=no root@${VPS_HOST} '
                 cd /root/chattingo &&
-                docker compose -f docker-compose.deploy.yml pull &&
-                docker compose -f docker-compose.deploy.yml up -d --remove-orphans
+                DOCKERHUB_USER=$DOCKERHUB_USER docker compose -f docker-compose.deploy.yml pull &&
+                DOCKERHUB_USER=$DOCKERHUB_USER docker compose -f docker-compose.deploy.yml up -d --remove-orphans
               '
             """
 
