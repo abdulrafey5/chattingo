@@ -25,7 +25,6 @@ pipeline {
     stage('Git Clone') {
       steps {
         echo "→ Checkout repository"
-        // Checkout the repo where this Jenkinsfile lives
         checkout scm
         sh 'git --no-pager log -1 --oneline || true'
       }
@@ -35,12 +34,9 @@ pipeline {
       steps {
         echo "→ Build frontend and backend Docker images"
         dir('frontend') {
-          sh 'npm ci'
-          sh 'npm run build'
           sh "docker build -t ${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG} ."
         }
         dir('backend') {
-          sh './mvnw -DskipTests package'
           sh "docker build -t ${DOCKERHUB_USER}/chattingo-backend:${BACKEND_TAG} ."
         }
       }
@@ -49,8 +45,6 @@ pipeline {
     stage('Filesystem Scan') {
       steps {
         echo "→ Filesystem security scan (optional: requires trivy or similar)."
-        // Try to run Trivy container to scan the repository files. If Trivy is not available, this step may fail.
-        // You can remove or replace with another scanner you have.
         sh '''
           if docker run --rm aquasec/trivy:latest --version >/dev/null 2>&1; then
             docker run --rm -v "$(pwd)":/project aquasec/trivy:latest fs --exit-code 1 --severity CRITICAL,HIGH /project || true
@@ -92,7 +86,6 @@ pipeline {
     stage('Update Compose') {
       steps {
         echo "→ Prepare docker-compose.deploy.yml with new image tags"
-        // Ensure you have a docker-compose.deploy.yml in repo that uses the same image names
         sh '''
           cp docker-compose.deploy.yml docker-compose.deploy.yml.tmp
           sed -i "s|${DOCKERHUB_USER}/chattingo-frontend:.*|${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG}|g" docker-compose.deploy.yml.tmp
@@ -108,7 +101,7 @@ pipeline {
         echo "→ Deploy to VPS (copy .env and docker-compose, pull & restart)"
         withCredentials([sshUserPrivateKey(credentialsId: "${SSH_CRED_ID}", keyFileVariable: 'SSH_KEY')]) {
           script {
-            // create .env locally and scp to VPS; then scp compose file and restart compose
+            // create .env locally and scp to VPS
             sh """
               cat > .env.deploy <<EOF
 MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
@@ -129,11 +122,11 @@ EOF
             // Ensure remote dir exists
             sh "ssh -i $SSH_KEY -o StrictHostKeyChecking=no root@${VPS_HOST} 'mkdir -p /root/chattingo && chmod 700 /root/chattingo'"
 
-            // Copy .env and compose file
+            // Copy files
             sh "scp -i $SSH_KEY -o StrictHostKeyChecking=no .env.deploy root@${VPS_HOST}:/root/chattingo/.env"
             sh "scp -i $SSH_KEY -o StrictHostKeyChecking=no docker-compose.deploy.yml.tmp root@${VPS_HOST}:/root/chattingo/docker-compose.deploy.yml"
 
-            // Pull new images and restart
+            // Pull & restart
             sh """
               ssh -i $SSH_KEY -o StrictHostKeyChecking=no root@${VPS_HOST} '
                 cd /root/chattingo &&
@@ -148,7 +141,7 @@ EOF
         }
       }
     }
-  } // end stages
+  }
 
   post {
     success { echo "✅ Pipeline finished successfully" }
