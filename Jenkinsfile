@@ -2,61 +2,85 @@ pipeline {
   agent any
 
   environment {
-    DOCKERHUB_CREDS   = 'dockerhub'   
-    DOCKERHUB_USER    = 'abdulrafey5'
-    FRONTEND_TAG      = "frontend-${env.BUILD_NUMBER}"
-    BACKEND_TAG       = "backend-${env.BUILD_NUMBER}"
+    // Static / computed values
+    VPS_HOST        = "72.60.192.150"
+    DOCKERHUB_USER  = "abdulrafey5"
+    FRONTEND_TAG    = "frontend-${env.BUILD_NUMBER}"
+    BACKEND_TAG     = "backend-${env.BUILD_NUMBER}"
 
-    // IMPORTANT: set your VPS details here (or read from a Jenkins secret)
-    REACT_APP_API_URL = "http://72.60.192.150"     // change to your VPS IP
-    VPS_HOST          = "72.60.192.150"
-    DEPLOY_PATH       = "/root/chattingo"         // path on VPS to copy docker-compose.yml
-    SSH_CRED_ID       = "hostinger-ssh"           // create this SSH credential in Jenkins
+    // Secrets from Jenkins credentials (IDs must exist)
+    MYSQL_ROOT_PASSWORD = credentials('MYSQL_ROOT_PASSWORD')
+    MYSQL_DATABASE      = credentials('MYSQL_DATABASE')
+    MYSQL_USER          = credentials('MYSQL_USER')
+    MYSQL_PASSWORD      = credentials('MYSQL_PASSWORD')
+    JWT_SECRET          = credentials('JWT_SECRET')
+
+    // Non-secret or optional
+    REACT_APP_API_URL   = "http://${VPS_HOST}"
+    DOCKERHUB_CRED_ID   = 'dockerhub'
+    SSH_CRED_ID         = 'hostinger-ssh'
   }
 
   stages {
-    stage('Checkout') {
+    stage('Git Clone') {
       steps {
-        echo "📥 Checkout..."
+        echo "→ Checkout repository"
+        // Checkout the repo where this Jenkinsfile lives
         checkout scm
+        sh 'git --no-pager log -1 --oneline || true'
       }
     }
 
-    stage('Build Images') {
+    stage('Image Build') {
       steps {
-        echo "🐳 Building frontend (with REACT build-arg) and backend images..."
-        sh """
-          docker build --build-arg REACT_APP_API_URL=${REACT_APP_API_URL} -t ${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG} ./frontend
-          docker build -t ${DOCKERHUB_USER}/chattingo-backend:${BACKEND_TAG} ./backend
-        """
+        echo "→ Build frontend and backend Docker images"
+        dir('frontend') {
+          sh 'npm ci'
+          sh 'npm run build'
+          sh "docker build -t ${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG} ."
+        }
+        dir('backend') {
+          sh './mvnw -DskipTests package'
+          sh "docker build -t ${DOCKERHUB_USER}/chattingo-backend:${BACKEND_TAG} ."
+        }
       }
     }
 
     stage('Filesystem Scan') {
       steps {
-        echo "🔎 Trivy filesystem scan (secrets / infra checks) - non-failing by default"
+        echo "→ Filesystem security scan (optional: requires trivy or similar)."
+        // Try to run Trivy container to scan the repository files. If Trivy is not available, this step may fail.
+        // You can remove or replace with another scanner you have.
         sh '''
-          docker run --rm -v ${WORKSPACE}:/project aquasec/trivy:latest fs --exit-code 0 --no-progress /project || true
+          if docker run --rm aquasec/trivy:latest --version >/dev/null 2>&1; then
+            docker run --rm -v "$(pwd)":/project aquasec/trivy:latest fs --exit-code 1 --severity CRITICAL,HIGH /project || true
+          else
+            echo "Trivy not available: skipping filesystem scan"
+          fi
         '''
       }
     }
 
     stage('Image Scan') {
       steps {
-        echo "🛡️ Trivy image scan (scans built images) - will mount docker socket"
-        sh """
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 0 --no-progress ${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG} || true
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --exit-code 0 --no-progress ${DOCKERHUB_USER}/chattingo-backend:${BACKEND_TAG}  || true
-        """
+        echo "→ Image vulnerability scan (optional: requires trivy)."
+        sh '''
+          if docker run --rm aquasec/trivy:latest --version >/dev/null 2>&1; then
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --severity CRITICAL,HIGH ${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG} || true
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --severity CRITICAL,HIGH ${DOCKERHUB_USER}/chattingo-backend:${BACKEND_TAG} || true
+          else
+            echo "Trivy not available: skipping image scan"
+          fi
+        '''
       }
     }
 
-    stage('Push Images') {
+    stage('Push to Registry') {
       steps {
-        echo "🚀 Pushing images to Docker Hub"
-        withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDS}", usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+        echo "→ Push images to Docker Hub"
+        withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CRED_ID}", usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
           sh '''
-            echo $DH_PASS | docker login -u $DH_USER --password-stdin
+            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
             docker push ${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG}
             docker push ${DOCKERHUB_USER}/chattingo-backend:${BACKEND_TAG}
             docker logout
@@ -65,39 +89,71 @@ pipeline {
       }
     }
 
-    // Optional: update a local copy of docker-compose to point to the new tags
     stage('Update Compose') {
       steps {
-        echo "✏️ Updating docker-compose.deploy.yml with new image tags"
+        echo "→ Prepare docker-compose.deploy.yml with new image tags"
+        // Ensure you have a docker-compose.deploy.yml in repo that uses the same image names
         sh '''
-          cp docker-compose.yml docker-compose.deploy.yml || true
-          # replace frontend and backend image tags (make sed patterns match your file formatting)
-          sed -i "s|image: ${DOCKERHUB_USER}/chattingo-frontend:.*|image: ${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG}|" docker-compose.deploy.yml || true
-          sed -i "s|image: ${DOCKERHUB_USER}/chattingo-backend:.*|image: ${DOCKERHUB_USER}/chattingo-backend:${BACKEND_TAG}|" docker-compose.deploy.yml || true
-          echo "Updated docker-compose.deploy.yml:"
-          cat docker-compose.deploy.yml
+          cp docker-compose.deploy.yml docker-compose.deploy.yml.tmp
+          sed -i "s|${DOCKERHUB_USER}/chattingo-frontend:.*|${DOCKERHUB_USER}/chattingo-frontend:${FRONTEND_TAG}|g" docker-compose.deploy.yml.tmp
+          sed -i "s|${DOCKERHUB_USER}/chattingo-backend:.*|${DOCKERHUB_USER}/chattingo-backend:${BACKEND_TAG}|g" docker-compose.deploy.yml.tmp
+          echo "----- docker-compose.deploy.yml.tmp -----"
+          sed -n '1,200p' docker-compose.deploy.yml.tmp || true
         '''
       }
     }
 
-    // Optional: Deploy to Hostinger VPS (will use SSH credential SSH_CRED_ID)
     stage('Deploy') {
       steps {
-        echo "🚢 Deploying to ${VPS_HOST}"
-        sshagent (credentials: ["${SSH_CRED_ID}"]) {
-          sh """
-            scp -o StrictHostKeyChecking=no docker-compose.deploy.yml root@${VPS_HOST}:${DEPLOY_PATH}/docker-compose.yml
-            ssh -o StrictHostKeyChecking=no root@${VPS_HOST} "cd ${DEPLOY_PATH} && docker compose pull && docker compose up -d --remove-orphans"
-          """
+        echo "→ Deploy to VPS (copy .env and docker-compose, pull & restart)"
+        withCredentials([sshUserPrivateKey(credentialsId: "${SSH_CRED_ID}", keyFileVariable: 'SSH_KEY')]) {
+          script {
+            // create .env locally and scp to VPS; then scp compose file and restart compose
+            sh """
+              cat > .env.deploy <<EOF
+MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+MYSQL_DATABASE=${MYSQL_DATABASE}
+MYSQL_USER=${MYSQL_USER}
+MYSQL_PASSWORD=${MYSQL_PASSWORD}
+JWT_SECRET=${JWT_SECRET}
+SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/${MYSQL_DATABASE}
+SPRING_DATASOURCE_USERNAME=${MYSQL_USER}
+SPRING_DATASOURCE_PASSWORD=${MYSQL_PASSWORD}
+SPRING_PROFILES_ACTIVE=prod
+REACT_APP_API_URL=${REACT_APP_API_URL}
+BACKEND_TAG=${BACKEND_TAG}
+FRONTEND_TAG=${FRONTEND_TAG}
+EOF
+            """
+
+            // Ensure remote dir exists
+            sh "ssh -i $SSH_KEY -o StrictHostKeyChecking=no root@${VPS_HOST} 'mkdir -p /root/chattingo && chmod 700 /root/chattingo'"
+
+            // Copy .env and compose file
+            sh "scp -i $SSH_KEY -o StrictHostKeyChecking=no .env.deploy root@${VPS_HOST}:/root/chattingo/.env"
+            sh "scp -i $SSH_KEY -o StrictHostKeyChecking=no docker-compose.deploy.yml.tmp root@${VPS_HOST}:/root/chattingo/docker-compose.deploy.yml"
+
+            // Pull new images and restart
+            sh """
+              ssh -i $SSH_KEY -o StrictHostKeyChecking=no root@${VPS_HOST} '
+                cd /root/chattingo &&
+                docker compose -f docker-compose.deploy.yml pull &&
+                docker compose -f docker-compose.deploy.yml up -d --remove-orphans
+              '
+            """
+
+            // cleanup local helper file
+            sh 'rm -f .env.deploy'
+          }
         }
       }
     }
-  }
+  } // end stages
 
   post {
-    always {
-      echo "📌 Pipeline finished"
-    }
+    success { echo "✅ Pipeline finished successfully" }
+    failure { echo "❌ Pipeline failed" }
+    always { echo "Pipeline run complete (see console output for details)" }
   }
 }
 
