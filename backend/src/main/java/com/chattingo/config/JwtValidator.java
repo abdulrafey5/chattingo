@@ -62,6 +62,8 @@ public class JwtValidator extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        
+
 
         String jwt = request.getHeader("Authorization");
 
@@ -84,6 +86,8 @@ public class JwtValidator extends OncePerRequestFilter {
             } catch (Exception e) {
                 throw new BadCredentialsException("Invalid token recieved...");
             }
+	    else {
+	    }
         }
 
         filterChain.doFilter(request, response);

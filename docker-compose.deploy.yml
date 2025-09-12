@@ -26,8 +26,6 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
       SPRING_PROFILES_ACTIVE: prod
       JWT_SECRET: ${JWT_SECRET}
-    ports:
-      - "8081:8080"
     networks:
       - chattingo_net
 
