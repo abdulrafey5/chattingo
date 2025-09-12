@@ -15,7 +15,6 @@ ehthumbs.db
 Thumbs.db
 
 # Environment files (keep examples, ignore actual .env files)
-.env
 !.env.example
 
 # Logs and temporary files
@@ -101,3 +100,6 @@ application.log
 # Temporary Maven files
 dependency-reduced-pom.xml
 email_system
+config.bat
+temp_auto_push.bat
+temp_interactive_push.bat
