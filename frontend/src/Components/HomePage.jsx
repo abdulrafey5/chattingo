@@ -53,7 +53,7 @@ function HomePage() {
     console.log("Attempting to connect to WebSocket...");
     
     const client = new Client({
-      webSocketFactory: () => new SockJs(`${BASE_API_URL}/ws`),
+      webSocketFactory: () => new SockJs(`${process.env.REACT_APP_WS_URL}?token=${token}`),
       connectHeaders: {
         Authorization: `Bearer ${token}`,
         "X-XSRF-TOKEN": getCookie("XSRF-TOKEN"),
